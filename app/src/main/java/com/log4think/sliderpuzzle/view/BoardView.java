@@ -1,6 +1,7 @@
 package com.log4think.sliderpuzzle.view;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import android.content.Context;
@@ -13,7 +14,6 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import com.log4think.sliderpuzzle.R;
-import com.log4think.sliderpuzzle.model.Board;
 import com.log4think.sliderpuzzle.utils.Log;
 import com.log4think.sliderpuzzle.utils.Utils;
 
@@ -25,11 +25,14 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
 
   private int childWidth, childHeight;
   private int cellPadding;
+  private int colCount, rowCount;
+
+  private List<CellView> cellViews;
+
   private PointF lastDragPoint;
-  private Board.Direction direction;
+  private Direction direction;
   private List<CellView> capturedViews;
   private CellView emptyView;
-  private Board board;
 
   public BoardView(Context context) {
     super(context);
@@ -48,89 +51,90 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
   private void init() {
     childWidth = 0;
     childHeight = 0;
+    colCount = 0;
+    rowCount = 0;
+    cellViews = new ArrayList<CellView>();
     capturedViews = new ArrayList<CellView>();
-    board = new Board(0, 0);
   }
 
   public void setBoardSize(int colCount, int rowCount) {
-    board = new Board(colCount, rowCount);
+    this.colCount = colCount;
+    this.rowCount = rowCount;
     reset();
   }
 
   private void reset() {
     // load image
-    List<Bitmap> slices = Utils.sliceBitmap(getContext(), R.drawable.globe,
-        board.getColCount(), board.getRowCount());
+    List<Bitmap> slices = Utils.sliceBitmap(getContext(), R.drawable.globe, colCount, rowCount);
 
     // generate sliced cell views
-    board.clearView();
-    CellView view = null;
+    cellViews.clear();
     for (int i = 0; i < slices.size(); i++) {
-      view = new CellView(getContext());
+      CellView view = new CellView(getContext());
       view.setOnTouchListener(this);
       view.setImageBitmap(slices.get(i));
-      board.addView(view);
+      view.setIndex(cellViews.size());
+      view.setCoord(view.getIndex() % colCount, view.getIndex() / colCount);
+      cellViews.add(view);
     }
-    // the last view is empty space
-    if (view != null) {
-      view.setEmpty(true);
-      emptyView = view;
+
+    // set the last view to empty space
+    if (cellViews.size() > 0) {
+      emptyView = cellViews.get(cellViews.size() - 1);
+      emptyView.setEmpty(true);
     }
     slices.clear();
 
-    board.shuffle();
+    // shuffle the cells
+    Collections.shuffle(cellViews);
 
-    // add views to board
+    // add views to UI
     removeAllViews();
-    for (View cell : board.getViews()) {
+    for (View cell : cellViews) {
       addView(cell);
     }
   }
 
-  private Point getCellViewTopLeft(CellView view) {
-    return new Point(getPaddingLeft() + view.getCol() * childWidth,
-        getPaddingTop() + view.getRow() * childHeight);
-  }
-
   @Override
   protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-    Log.d(TAG, "onMeasure(%d, %d)", widthMeasureSpec, heightMeasureSpec);
-
     int rw = MeasureSpec.getSize(widthMeasureSpec);
     int rh = MeasureSpec.getSize(heightMeasureSpec);
 
-    if (board.getColCount() * board.getRowCount() == 0) {
+    if (colCount * rowCount == 0) {
       super.onMeasure(widthMeasureSpec, heightMeasureSpec);
       return;
     }
 
-    childWidth = (rw - getPaddingLeft() - getPaddingRight()) / board.getColCount();
-    childHeight = (rh - getPaddingTop() - getPaddingBottom()) / board.getRowCount();
+    childWidth = (rw - getPaddingLeft() - getPaddingRight()) / colCount;
+    childHeight = (rh - getPaddingTop() - getPaddingBottom()) / rowCount;
 
     // make the board to square
     childWidth = Math.min(childWidth, childHeight);
     childHeight = Math.min(childWidth, childHeight);
 
     // re-calculate dimension
-    int vw = childWidth * board.getColCount() + getPaddingLeft() + getPaddingRight();
-    int vh = childHeight * board.getRowCount() + getPaddingTop() + getPaddingBottom();
+    int vw = childWidth * colCount + getPaddingLeft() + getPaddingRight();
+    int vh = childHeight * rowCount + getPaddingTop() + getPaddingBottom();
     setMeasuredDimension(vw, vh);
-
-    Log.d(TAG, "onMeasure(%d, %d)", vw, vh);
   }
 
   @Override
   protected void onLayout(boolean changed, int l, int t, int r, int b) {
-    Log.d(TAG, "onLayout(%s， %d, %d, %d, %d)", changed, l, t, r, b);
-
-    for (CellView view : board.getViews()) {
+    for (CellView view : cellViews) {
       view.setPadding(cellPadding, cellPadding, cellPadding, cellPadding);
 
-      Point p = getCellViewTopLeft(view);
+      Point p = calculateCellViewPosition(view);
       view.layout(p.x, p.y, p.x + childWidth, p.y + childHeight);
     }
   }
 
+  /**
+   * the touch event handler of cell view
+   * 
+   * @param v cell view
+   * @param event
+   * @return
+   */
   @Override
   public boolean onTouch(View v, MotionEvent event) {
     CellView view = (CellView) v;
@@ -140,8 +144,8 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
 
     switch (event.getActionMasked()) {
       case MotionEvent.ACTION_DOWN:
-        capturedViews = board.getCellsToEmptyView(view);
-        direction = board.getEmptyCellDirection(view);
+        capturedViews = getCellsToEmptyView(view);
+        direction = getEmptyCellDirection(view);
         break;
 
       case MotionEvent.ACTION_UP:
@@ -152,11 +156,10 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
           emptyView.setCoord(view.getCol(), view.getRow());
 
           // move all other captured cells to new place
-          board.moveCells(capturedViews, direction);
+          moveCells(capturedViews, direction);
         }
 
         // move cell views to right place
-        // for (CellView cell : board.getViews()) {
         animateMoveCells(capturedViews, 20);
 
         capturedViews.clear();
@@ -176,13 +179,33 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
     return true;
   }
 
+  /**
+   * @param view
+   * @return calculate the position of the view
+   */
+  private Point calculateCellViewPosition(CellView view) {
+    return new Point(getPaddingLeft() + view.getCol() * childWidth,
+        getPaddingTop() + view.getRow() * childHeight);
+  }
+
+  /**
+   * move the cells by animate
+   * 
+   * @param views
+   * @param duration
+   */
   private void animateMoveCells(List<CellView> views, int duration) {
     for (CellView view : views) {
-      Point p = getCellViewTopLeft(view);
+      Point p = calculateCellViewPosition(view);
       view.animate().x(p.x).y(p.y).setDuration(duration);
     }
   }
 
+  /**
+   * move the captured cells with the touch event
+   * 
+   * @param event
+   */
   private void moveCapturedCells(MotionEvent event) {
     if (capturedViews == null || capturedViews.size() == 0) {
       return;
@@ -192,7 +215,7 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
     float dy = event.getRawY() - lastDragPoint.y;
 
     CellView cellView = capturedViews.get(0);
-    Point p = getCellViewTopLeft(cellView);
+    Point p = calculateCellViewPosition(cellView);
 
     if (direction.x != 0) {
       dy = 0;
@@ -213,10 +236,74 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
     }
   }
 
+  public CellView getEmptyView() {
+    for (CellView view : cellViews) {
+      if (view.isEmpty()) {
+        return view;
+      }
+    }
+    return null;
+  }
+
+  public CellView getView(int col, int row) {
+    for (CellView view : cellViews) {
+      if (view.getCol() == col && view.getRow() == row) {
+        return view;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * @param view
+   * @return all cells between specific view and empty view
+   */
+  public List<CellView> getCellsToEmptyView(CellView view) {
+    List<CellView> result = new ArrayList<CellView>();
+
+    CellView emptyView = getEmptyView();
+    if (emptyView.isAbove(view)) {
+      for (int i = view.getRow(); i > emptyView.getRow(); i--) {
+        result.add(getView(view.getCol(), i));
+      }
+    } else if (emptyView.isBelow(view)) {
+      for (int i = view.getRow(); i < emptyView.getRow(); i++) {
+        result.add(getView(view.getCol(), i));
+      }
+    } else if (emptyView.isToLeftOf(view)) {
+      for (int i = view.getCol(); i > emptyView.getCol(); i--) {
+        result.add(getView(i, view.getRow()));
+      }
+    } else if (emptyView.isToRightOf(view)) {
+      for (int i = view.getCol(); i < emptyView.getCol(); i++) {
+        result.add(getView(i, view.getRow()));
+      }
+    }
+
+    return result;
+  }
+
+
+  public Direction getEmptyCellDirection(CellView cellView) {
+    CellView emptyView = getEmptyView();
+
+    if (emptyView.isAbove(cellView)) {
+      return new Direction(0, -1);
+    } else if (emptyView.isBelow(cellView)) {
+      return new Direction(0, 1);
+    } else if (emptyView.isToLeftOf(cellView)) {
+      return new Direction(-1, 0);
+    } else if (emptyView.isToRightOf(cellView)) {
+      return new Direction(1, 0);
+    } else {
+      return new Direction(0, 0);
+    }
+  }
+
   private int getMovedDelta() {
     if (capturedViews != null && capturedViews.size() > 0) {
       CellView view = capturedViews.get(0);
-      Point p = getCellViewTopLeft(view);
+      Point p = calculateCellViewPosition(view);
       int deltaX = (int) Math.abs(p.x - view.getX());
       int deltaY = (int) Math.abs(p.y - view.getY());
 
@@ -229,11 +316,27 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
     return 0;
   }
 
-  public int getCellPadding() {
-    return cellPadding;
+  public void moveCells(List<CellView> cellViews, Direction direction) {
+    for (CellView view : cellViews) {
+      view.setCoord(view.getCol() + direction.x, view.getRow() + direction.y);
+    }
   }
 
   public void setCellPadding(int cellPadding) {
     this.cellPadding = cellPadding;
+  }
+
+  /**
+   * a class descrive the movement direction
+   * x: -1 left, +1 right
+   * y: -1 top, +1 bottom
+   */
+  public class Direction {
+    public int x, y;
+
+    public Direction(int x, int y) {
+      this.x = Utils.signum(x);
+      this.y = Utils.signum(y);
+    }
   }
 }
