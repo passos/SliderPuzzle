@@ -7,7 +7,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.PointF;
-import android.support.v4.view.MotionEventCompat;
+import android.support.v4.widget.ViewDragHelper;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -20,8 +20,8 @@ import com.log4think.sliderpuzzle.utils.Utils;
 /**
  * @author liujinyu <simon.jinyu.liu@gmail.com>
  */
-public class BoardView extends ViewGroup implements View.OnTouchListener {
-  private static final String TAG = Log.tag(BoardView.class);
+public class PuzzleView extends ViewGroup {
+  private static final String TAG = Log.tag(PuzzleView.class);
 
   private int childWidth, childHeight;
   private int cellPadding;
@@ -29,22 +29,22 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
 
   private List<CellView> cellViews;
 
+  private ViewDragHelper dragHelper;
   private PointF lastDragPoint;
   private Direction direction;
   private List<CellView> capturedViews;
   private CellView emptyView;
-  private int activePointerId;
 
-  public BoardView(Context context) {
+  public PuzzleView(Context context) {
     super(context);
     init();
   }
 
-  public BoardView(Context context, AttributeSet attrs) {
+  public PuzzleView(Context context, AttributeSet attrs) {
     this(context, attrs, 0);
   }
 
-  public BoardView(Context context, AttributeSet attrs, int defStyleAttr) {
+  public PuzzleView(Context context, AttributeSet attrs, int defStyleAttr) {
     super(context, attrs, defStyleAttr);
     init();
   }
@@ -56,7 +56,7 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
     rowCount = 0;
     cellViews = new ArrayList<CellView>();
     capturedViews = new ArrayList<CellView>();
-    activePointerId = MotionEvent.INVALID_POINTER_ID;
+    dragHelper = ViewDragHelper.create(this, 1.0f, dragHelperCallback);
   }
 
   public void setBoardSize(int colCount, int rowCount) {
@@ -73,10 +73,9 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
     cellViews.clear();
     for (int i = 0; i < slices.size(); i++) {
       CellView view = new CellView(getContext());
-      view.setOnTouchListener(this);
+      view.setImageBitmap(slices.get(i));
       view.setIndex(i);
       view.setCoord(i % colCount, i / colCount);
-      view.setImageBitmap(slices.get(i));
       cellViews.add(view);
     }
 
@@ -134,117 +133,14 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
     }
   }
 
-  private PointF getRawXY(View v, MotionEvent event) {
-    return getRawXY(v, event, MotionEventCompat.getActionIndex(event));
-  }
-
-  private PointF getRawXY(View v, MotionEvent event, int pointerIndex) {
-    final int location[] = {0, 0};
-    v.getLocationOnScreen(location);
-    if (pointerIndex < MotionEventCompat.getPointerCount(event)) {
-      final float x = MotionEventCompat.getX(event, pointerIndex) + location[0];
-      final float y = MotionEventCompat.getY(event, pointerIndex) + location[1];
-      return new PointF(x, y);
-    } else {
-      return null;
-    }
-  }
-
-  /**
-   * the touch event handler of cell view
-   * 
-   * @param v cell view
-   * @param event
-   * @return
-   */
   @Override
-  public boolean onTouch(View v, MotionEvent event) {
-    CellView view = (CellView) v;
-    if (view.isEmpty() || !view.isInSameAxis(emptyView)) {
-      return false;
-    }
+  public boolean onInterceptTouchEvent(MotionEvent event) {
+    return dragHelper.shouldInterceptTouchEvent(event);
+  }
 
-    final int action = MotionEventCompat.getActionMasked(event);
-
-    switch (action) {
-      case MotionEvent.ACTION_DOWN: {
-        if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
-          capturedViews = getCellsToEmptyView(view);
-          direction = getEmptyCellDirection(view);
-
-          lastDragPoint = getRawXY(v, event);
-          activePointerId = MotionEventCompat.getPointerId(event, 0);
-        }
-        break;
-      }
-
-      case MotionEvent.ACTION_CANCEL:
-      case MotionEvent.ACTION_UP: {
-        if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
-          break;
-        }
-
-        activePointerId = MotionEvent.INVALID_POINTER_ID;
-
-        if (getMovedDelta() > childWidth / 2 || getMovedDelta() > childHeight / 2 // moved half way
-            || getMovedDelta() < 5 // click
-        ) {
-          // move empty space to touched cell
-          emptyView.setCoord(view.getCol(), view.getRow());
-
-          // move all other captured cells to new place
-          moveCells(capturedViews, direction);
-        }
-
-        // move cell views to right place
-        Point p = calculateCellViewPosition(emptyView);
-        emptyView.layout(p.x, p.y, p.x + childWidth, p.y + childHeight);
-        animateMoveCells(capturedViews, 20);
-
-        capturedViews = null;
-        lastDragPoint = null;
-        direction = null;
-        break;
-      }
-
-      case MotionEvent.ACTION_MOVE: {
-        if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
-          break;
-        }
-
-        final int pointerIndex = MotionEventCompat.findPointerIndex(event, activePointerId);
-        PointF p = null;
-        try {
-          p = getRawXY(v, event, pointerIndex);
-        } catch (Exception e) {}
-        if (p == null)
-          break;
-
-        if (lastDragPoint != null) {
-          moveCapturedCells(p.x - lastDragPoint.x, p.y - lastDragPoint.y);
-        }
-
-        lastDragPoint = p;
-        break;
-      }
-
-
-      case MotionEvent.ACTION_POINTER_UP: {
-        final int pointerIndex = MotionEventCompat.getActionIndex(event);
-        final int pointerId = MotionEventCompat.getPointerId(event, pointerIndex);
-
-        if (pointerId == activePointerId) {
-          // choose another pointer
-          final int newPointerIndex = pointerIndex == 0 ? 1 : 0;
-          if (newPointerIndex < MotionEventCompat.getPointerCount(event)) {
-            lastDragPoint = getRawXY(v, event, newPointerIndex);
-            activePointerId = MotionEventCompat.getPointerId(event, newPointerIndex);
-          }
-        }
-        break;
-      }
-    }
-
+  @Override
+  public boolean onTouchEvent(MotionEvent event) {
+    dragHelper.processTouchEvent(event);
     return true;
   }
 
@@ -264,43 +160,27 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
    * @param duration
    */
   private void animateMoveCells(List<CellView> views, int duration) {
-    if (views != null) {
-      for (CellView view : views) {
-        Point p = calculateCellViewPosition(view);
-        view.animate().x(p.x).y(p.y).setDuration(duration);
-      }
+    for (CellView view : views) {
+      Point p = calculateCellViewPosition(view);
+      view.animate().x(p.x).y(p.y).setDuration(duration);
+      // view.layout(p.x, p.y, p.x + childWidth, p.y + childHeight);
     }
   }
 
   /**
    * move the captured cells with the touch event
    * 
-   * @param event
+   * @param dx, dy
    */
   private void moveCapturedCells(float dx, float dy) {
     if (capturedViews == null || capturedViews.size() == 0) {
       return;
     }
 
-    CellView cellView = capturedViews.get(0);
-    Point p = calculateCellViewPosition(cellView);
-
-    if (direction.x != 0) {
-      dy = 0;
-      if (!Utils.isValueInRange(cellView.getX() + dx, p.x, p.x + direction.x * childWidth)) {
-        return;
-      }
-    } else if (direction.y != 0) {
-      dx = 0;
-      if (!Utils.isValueInRange(cellView.getY() + dy, p.y, p.y + direction.y * childHeight)) {
-        return;
-      }
-    }
-
     // set the cells position
     for (CellView view : capturedViews) {
-      view.setX(view.getX() + dx);
-      view.setY(view.getY() + dy);
+      view.setTranslationX(dx);
+      view.setTranslationY(dy);
     }
   }
 
@@ -366,27 +246,24 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
   }
 
   private int getMovedDelta() {
-    if (capturedViews == null || capturedViews.size() == 0) {
-      return 0;
-    }
+    if (capturedViews != null && capturedViews.size() > 0) {
+      CellView view = capturedViews.get(0);
+      Point p = calculateCellViewPosition(view);
+      int deltaX = (int) Math.abs(p.x - view.getX());
+      int deltaY = (int) Math.abs(p.y - view.getY());
 
-    CellView view = capturedViews.get(0);
-    Point p = calculateCellViewPosition(view);
-    int deltaX = (int) Math.abs(p.x - view.getX());
-    int deltaY = (int) Math.abs(p.y - view.getY());
-
-    if (deltaX != 0) {
-      return deltaX;
-    } else {
-      return deltaY;
+      if (deltaX != 0) {
+        return deltaX;
+      } else {
+        return deltaY;
+      }
     }
+    return 0;
   }
 
   public void moveCells(List<CellView> cellViews, Direction direction) {
-    if (cellViews != null) {
-      for (CellView view : cellViews) {
-        view.setCoord(view.getCol() + direction.x, view.getRow() + direction.y);
-      }
+    for (CellView view : cellViews) {
+      view.setCoord(view.getCol() + direction.x, view.getRow() + direction.y);
     }
   }
 
@@ -407,4 +284,85 @@ public class BoardView extends ViewGroup implements View.OnTouchListener {
       this.y = Utils.signum(y);
     }
   }
+
+  private ViewDragHelper.Callback dragHelperCallback = new ViewDragHelper.Callback() {
+    @Override
+    public boolean tryCaptureView(View child, int pointerId) {
+      CellView view = (CellView) child;
+      boolean result = !view.isEmpty() && view.isInSameAxis(emptyView);
+      Log.d(TAG, "tryCaptureView (%d, %d): %s", view.getCol(), view.getRow(), result);
+      return result;
+    }
+
+    @Override
+    public void onViewCaptured(View capturedChild, int activePointerId) {
+      CellView view = (CellView) capturedChild;
+
+      capturedViews = getCellsToEmptyView(view);
+      direction = getEmptyCellDirection(view);
+      Log.d(TAG, "onViewCaptured: %d", capturedViews.size());
+    }
+
+    @Override
+    public void onViewReleased(View releasedChild, float xvel, float yvel) {
+      CellView view = (CellView) capturedViews.get(0);
+
+      if (getMovedDelta() > childWidth / 2 || getMovedDelta() > childHeight / 2 // moved half way
+          || getMovedDelta() < 5 // click
+      ) {
+        // move empty space to touched cell
+        emptyView.setCoord(view.getCol(), view.getRow());
+
+        // move all other captured cells to new place
+        moveCells(capturedViews, direction);
+
+        Log.d(TAG, "onViewReleased: half way or click");
+      }
+
+      // move cell views to right place
+      Point p = calculateCellViewPosition(emptyView);
+      emptyView.layout(p.x, p.y, p.x + childWidth, p.y + childHeight);
+      animateMoveCells(capturedViews, 20);
+
+      capturedViews.clear();
+      capturedViews = null;
+      lastDragPoint = null;
+      direction = null;
+    }
+
+    @Override
+    public void onViewPositionChanged(View changedView, int left, int top, int dx, int dy) {
+      Log.d(TAG, "onViewPositionChanged: lt(%d, %d) - xy(%.0f, %.0f)",
+          changedView.getLeft(), changedView.getTop(), changedView.getX(), changedView.getY());
+      moveCapturedCells(dx, dy);
+    }
+
+    @Override
+    public int clampViewPositionVertical(View child, int top, int dy) {
+      if (capturedViews == null || capturedViews.size() == 0 || direction.y == 0) {
+        return child.getTop();
+      }
+
+      CellView cellView = (CellView) child;
+      Point p = calculateCellViewPosition(cellView);
+
+      Log.d(TAG, "clampViewPositionVertical: %d/%.1f ~ [%d, %d], direction: (%d, %d)", top,
+          child.getY(), p.y, p.y + direction.y * childHeight, direction.x, direction.y);
+      return Utils.getValueInRange(top, p.y, p.y + direction.y * childHeight);
+    }
+
+    @Override
+    public int clampViewPositionHorizontal(View child, int left, int dx) {
+      if (capturedViews == null || capturedViews.size() == 0 || direction.x == 0) {
+        return child.getLeft();
+      }
+
+      CellView cellView = (CellView) child;
+      Point p = calculateCellViewPosition(cellView);
+
+      Log.d(TAG, "clampViewPositionHorizontal: %d ~ [%d - %d], direction(%d, %d)", left,
+          p.x, p.x + direction.x * childWidth, direction.x, direction.y);
+      return Utils.getValueInRange(left, p.x, p.x + direction.x * childWidth);
+    }
+  };
 }
