@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">迷图</string>
+
+    <string name="action_settings">设置</string>
+
+    <string name="header_subtitle">啦啦啦啦啦</string>
+    <string name="header_title">000</string>
+
+    <string name="shuffle">乱</string>
+    <string name="restore">解</string>
+</resources>

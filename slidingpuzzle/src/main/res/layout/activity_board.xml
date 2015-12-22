@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".activity.MainActivity">
+
+    <LinearLayout
+        android:id="@+id/headerContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@+id/boardView"
+        android:layout_alignParentTop="true"
+        android:background="@color/colorPrimary"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/headerTitleView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="@dimen/padding_medium"
+            android:gravity="center_horizontal"
+            android:text="@string/header_title"
+            android:textColor="@color/colorTextIcon"
+            android:textSize="@dimen/text_size_header_title"/>
+
+        <!--<TextView-->
+        <!--android:id="@+id/headerSubtitleView"-->
+        <!--android:layout_width="match_parent"-->
+        <!--android:layout_height="wrap_content"-->
+        <!--android:gravity="center_horizontal"-->
+        <!--android:textColor="@color/colorSecondaryText"-->
+        <!--android:textSize="@dimen/text_size_header_subtitle"/>-->
+    </LinearLayout>
+
+    <com.log4think.slidingpuzzle.view.BoardView
+        android:id="@+id/boardView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@+id/operationView"
+        android:padding="@dimen/padding_tiny"/>
+
+    <include
+        android:id="@+id/operationView"
+        layout="@layout/operation_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"/>
+</RelativeLayout>
